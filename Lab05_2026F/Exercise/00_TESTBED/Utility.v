@@ -89,7 +89,7 @@ endmodule
 // Dumper
 //=====================================================================
 
-module matrix_1d_csv_dumper
+module matrix_hex_1d_csv_dumper
 #(
     parameter end1 = 0,
     parameter start1 = 0,
@@ -122,7 +122,7 @@ end endtask;
 
 endmodule
 
-module matrix_2d_csv_dumper
+module matrix_hex_2d_csv_dumper
 #(
     parameter end1 = 0,
     parameter end2 = 0,
@@ -162,7 +162,59 @@ end endtask;
 
 endmodule
 
-module matrix_3d_csv_dumper
+module matrix_int_2d_csv_dumper
+#(
+    parameter end1 = 0,
+    parameter end2 = 0,
+    parameter start1 = 0,
+    parameter start2 = 0,
+    parameter space_per_row = 0,
+    parameter space_per_col = 0,
+    parameter prefix_col = "",
+    parameter postfix_col = "",
+    parameter prefix_row = "",
+    parameter postfix_row = ""
+)();
+
+integer idx1,idx2;
+
+task dump; 
+    input integer file;
+    input integer in[end1:start1][end2:start2];
+
+    integer count1;
+    integer count2;
+begin
+    count1 = 0;
+    $fwrite(file, ",");
+    for(idx2=start2 ; idx2<=end2 ; idx2=idx2+1) begin
+        $fwrite(file, "%0s%3d%0s,", prefix_col, idx2, postfix_col);
+        count1 = count1 + 1;
+        if(count1 % space_per_col == 0 && count1 != 0 && space_per_col != 0)
+            $fwrite(file, ",");
+    end
+    count1 = 0;
+    $fwrite(file, "\n");
+    for(idx1=start1 ; idx1<=end1 ; idx1=idx1+1) begin
+        $fwrite(file, "%0s%4d%0s,", prefix_row, idx1, postfix_row);
+        count2 = 0;
+        for(idx2=start2 ; idx2<=end2 ; idx2=idx2+1) begin
+            $fwrite(file, "%4d,", in[idx1][idx2]);
+            count2 = count2 + 1;
+            if(count2 % space_per_col == 0  && count2 != 0 && space_per_col != 0)
+                $fwrite(file, ",");
+        end
+        $fwrite(file, "\n");
+
+        count1 = count1 + 1;
+        if(count1 % space_per_row == 0  && count1 != 0 && space_per_row != 0)
+            $fwrite(file, "\n");
+    end
+end endtask;
+
+endmodule
+
+module matrix_hex_3d_csv_dumper
 #(
     parameter end1 = 0,
     parameter end2 = 0,
