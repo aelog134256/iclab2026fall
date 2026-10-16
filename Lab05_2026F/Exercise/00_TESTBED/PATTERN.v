@@ -78,7 +78,7 @@ real MIN_RANGE_OF_INPUT = -0.5;
 real MAX_RANGE_OF_INPUT =  0.5;
 
 // Input and output file names.
-parameter DEBUG_FOLDER = "debug_files";
+parameter DEBUG_FOLDER = "debug_files/";
 parameter INPUT_CSV =  "input.csv";
 parameter OUTPUT_CSV = "output.csv";
 
@@ -137,6 +137,7 @@ reg [10*8:1] bkg_white_prefix   = "\033[47;1m";
 parameter SIZE_OF_INPUT = 128;
 parameter SIZE_OF_BLOCK = 8;
 parameter LEVEL_SHIFT_OFFSET = 128;
+parameter ROUND_BITS_DCT = 8 + 8 + 2;
 
 integer _input[SIZE_OF_INPUT-1:0][SIZE_OF_INPUT-1:0];
 integer _level_shift[SIZE_OF_INPUT-1:0][SIZE_OF_INPUT-1:0];
@@ -144,7 +145,7 @@ integer _dct_inter[SIZE_OF_INPUT-1:0][SIZE_OF_INPUT-1:0];
 integer _dct_mult[SIZE_OF_INPUT-1:0][SIZE_OF_INPUT-1:0];
 integer _dct_round[SIZE_OF_INPUT-1:0][SIZE_OF_INPUT-1:0];
 integer _quantization[SIZE_OF_INPUT-1:0][SIZE_OF_INPUT-1:0];
-integer _zigzag[SIZE_OF_INPUT-1:0][SIZE_OF_INPUT-1:0];
+integer _zigzag[((SIZE_OF_INPUT/SIZE_OF_BLOCK) ** 2)-1:0][SIZE_OF_BLOCK*SIZE_OF_BLOCK-1:0];
 
 //=====================================================================
 //  CLOCK
@@ -342,7 +343,7 @@ begin
                     matrix_in[row][col] = _level_shift[row_b*SIZE_OF_BLOCK+row][col_b*SIZE_OF_BLOCK+col];
                 end
             end
-            JPEG_helper.mutmax1(coeff, matrix_in, matrix_out);
+            JPEG_helper.mutmax1(matrix_in, coeff, matrix_out);
             // assign output matrix
             for(row=0 ; row<SIZE_OF_BLOCK ; row=row+1) begin
                 for(col=0 ; col<SIZE_OF_BLOCK ; col=col+1) begin
@@ -360,7 +361,7 @@ begin
                     matrix_in[row][col] = _dct_inter[row_b*SIZE_OF_BLOCK+row][col_b*SIZE_OF_BLOCK+col];
                 end
             end
-            JPEG_helper.mutmax2(matrix_in, coeff, matrix_out);
+            JPEG_helper.mutmax_by_row(coeff, matrix_in, matrix_out);
             // assign output matrix
             for(row=0 ; row<SIZE_OF_BLOCK ; row=row+1) begin
                 for(col=0 ; col<SIZE_OF_BLOCK ; col=col+1) begin
@@ -372,17 +373,51 @@ begin
 
     for(row=0 ; row<SIZE_OF_INPUT ; row=row+1) begin
         for(col=0 ; col<SIZE_OF_INPUT ; col=col+1) begin
-            _dct_round[row][col] = JPEG_helper.dct_round(_dct_mult[row][col]);
+            _dct_round[row][col] = JPEG_helper.round_s(_dct_mult[row][col], ROUND_BITS_DCT);
         end
     end
 end endtask
 
-task quantization_task; begin
-    ;
+task quantization_task;
+    integer row_b;
+    integer row;
+    integer col_b;
+    integer col;
+begin
+    for(row_b=0 ; row_b<SIZE_OF_INPUT/SIZE_OF_BLOCK ; row_b=row_b+1) begin
+        for(col_b=0 ; col_b<SIZE_OF_INPUT/SIZE_OF_BLOCK ; col_b=col_b+1) begin
+            for(row=0 ; row<SIZE_OF_BLOCK ; row=row+1) begin
+                for(col=0 ; col<SIZE_OF_BLOCK ; col=col+1) begin
+                    _quantization[row_b*SIZE_OF_BLOCK+row][col_b*SIZE_OF_BLOCK+col] =
+                        JPEG_helper.round_s(_dct_round[row_b*SIZE_OF_BLOCK+row][col_b*SIZE_OF_BLOCK+col], JPEG_helper.quant_coeff[row][col]);
+                end
+            end
+        end
+    end
 end endtask
 
-task zigzag_task; begin
-    ;
+task zigzag_task;
+    integer row_b;
+    integer row;
+    integer col_b;
+    integer col;
+    integer z_index;
+begin
+    for(row=0 ; row<SIZE_OF_INPUT ; row=row+1) begin
+        for(col=0 ; col<SIZE_OF_INPUT ; col=col+1) begin
+        end
+    end
+
+    for(row_b=0 ; row_b<SIZE_OF_INPUT/SIZE_OF_BLOCK ; row_b=row_b+1) begin
+        for(col_b=0 ; col_b<SIZE_OF_INPUT/SIZE_OF_BLOCK ; col_b=col_b+1) begin
+            for(row=0 ; row<SIZE_OF_BLOCK ; row=row+1) begin
+                for(col=0 ; col<SIZE_OF_BLOCK ; col=col+1) begin
+                    z_index = JPEG_helper.zigzag_index(row, col);
+                    _zigzag[row_b*(SIZE_OF_INPUT/SIZE_OF_BLOCK)+col_b][z_index] = _quantization[row_b*SIZE_OF_BLOCK+row][col_b*SIZE_OF_BLOCK+col];
+                end
+            end
+        end
+    end
 end endtask
 
 //======================================
@@ -396,6 +431,10 @@ matrix_int_2d_csv_dumper #(
 matrix_int_2d_csv_dumper #(
     SIZE_OF_BLOCK-1,SIZE_OF_BLOCK-1,0,0,
     0,0,"#","","#","") dumper2();
+
+matrix_int_2d_csv_dumper #(
+    ((SIZE_OF_INPUT/SIZE_OF_BLOCK) ** 2)-1,SIZE_OF_BLOCK*SIZE_OF_BLOCK-1,0,0,
+    1,0,"#","","#","") dumper3(); // zigzag
 
 task export_debug_files;
     reg[1023:0] cmd;
@@ -411,13 +450,11 @@ end endtask
 task export_input_to_csv;
     integer file;
 
-    reg[1023:0] filename;
     integer row;
     integer col;
     integer matrix[SIZE_OF_BLOCK-1:0][SIZE_OF_BLOCK-1:0];
 begin
-    filename = INPUT_CSV;
-    file = $fopen(filename, "w");
+    file = $fopen({DEBUG_FOLDER, INPUT_CSV}, "w");
 
     $fdisplay(file, "Input,");
     dumper1.dump(file, _input);
@@ -437,11 +474,8 @@ end endtask
 
 task export_output_to_csv;
     integer file;
-
-    reg[1023:0] filename;
 begin
-    filename = OUTPUT_CSV;
-    file = $fopen(filename, "w");
+    file = $fopen({DEBUG_FOLDER, OUTPUT_CSV}, "w");
 
     $fdisplay(file, "Level Shift,");
     dumper1.dump(file, _level_shift);
@@ -453,6 +487,14 @@ begin
     dumper1.dump(file, _dct_mult);
     $fdisplay(file, "DCT Round");
     dumper1.dump(file, _dct_round);
+    $fdisplay(file, "");
+
+    $fdisplay(file, "Quantization");
+    dumper1.dump(file, _quantization);
+    $fdisplay(file, "");
+
+    $fdisplay(file, "Zigzag");
+    dumper3.dump(file, _zigzag);
     $fdisplay(file, "");
 
     $fclose(file);
