@@ -29,6 +29,22 @@ module arithmetic_helper
     parameter real_exp_width = 11  // verilog real (double)
 )();
 
+// Overflow issue when use the MIN/MAX integer
+function integer calc_num_bits;
+    input integer value;
+    integer abs_value;
+    begin
+        abs_value = (value < 0) ? -value : value;
+        calc_num_bits = 0;
+
+        // Calculate the number of bits required
+        while (abs_value > 0) begin
+            calc_num_bits = calc_num_bits + 1;
+            abs_value = abs_value >> 1;
+        end
+    end
+endfunction
+
 function is_valid_float_of_real;
     input real in;
 
@@ -116,6 +132,33 @@ begin
     for(idx1=start1 ; idx1<=end1 ; idx1=idx1+1) begin
         if(is_hex === 1) $fwrite(file, "%8h,", in[idx1]);
         else $fwrite(file, "%f,", arithmetic_helper.float_bits_to_real(in[idx1]));
+    end
+    $fwrite(file, "\n");
+end endtask;
+
+endmodule
+
+module matrix_int_1d_csv_dumper
+#(
+    parameter end1 = 0,
+    parameter start1 = 0,
+    parameter name = ""
+)();
+
+integer idx1;
+
+task dump; 
+    input integer file;
+    input integer in[end1:start1];
+begin
+    $fwrite(file, ",");
+    for(idx1=start1 ; idx1<=end1 ; idx1=idx1+1) begin
+        $fwrite(file, "%3d,", idx1);
+    end
+    $fwrite(file, "\n");
+    $fwrite(file, "%0s,", name);
+    for(idx1=start1 ; idx1<=end1 ; idx1=idx1+1) begin
+        $fwrite(file, "%4d,", in[idx1]);
     end
     $fwrite(file, "\n");
 end endtask;
